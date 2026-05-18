@@ -1,0 +1,10 @@
+{
+  "raw_csv": "iris.csv",
+  "program": "test_discretizer.py",
+  "output_csv": "generated_discretized.csv",
+  "raw_separator": null,
+  "output_separator": null,
+  "program_args": [],
+  "invoke_with_python": true,
+  "output_source": "csv_file"
+}
