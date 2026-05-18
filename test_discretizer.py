@@ -6,22 +6,22 @@ import pandas as pd
 
 BIN_MAP = {
     "sepal.length": [
-        (-float("inf"), 5.1, "(-inf, 5.1)"),
+        (-float("inf"), 5.1, "[-inf, 5.1)"),
         (5.1, 5.8, "[5.1, 5.8)"),
         (5.8, float("inf"), "[5.8, inf)"),
     ],
     "sepal.width": [
-        (-float("inf"), 2.8, "(-inf, 2.8)"),
+        (-float("inf"), 2.8, "[-inf, 2.8)"),
         (2.8, 3.2, "[2.8, 3.2)"),
         (3.2, float("inf"), "[3.2, inf)"),
     ],
     "petal.length": [
-        (-float("inf"), 2.5, "(-inf, 2.5)"),
+        (-float("inf"), 2.5, "[-inf, 2.5)"),
         (2.5, 4.9, "[2.5, 4.9)"),
         (4.9, float("inf"), "[4.9, inf)"),
     ],
     "petal.width": [
-        (-float("inf"), 0.8, "(-inf, 0.8)"),
+        (-float("inf"), 0.8, "[-inf, 0.8)"),
         (0.8, 1.8, "[0.8, 1.8)"),
         (1.8, float("inf"), "[1.8, inf)"),
     ],

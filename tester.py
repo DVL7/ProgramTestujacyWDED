@@ -23,6 +23,7 @@ DEFAULT_CONFIG = {
 }
 
 def read_csv_auto(path, separator=None):
+    """Wczytuje plik CSV i próbuje automatycznie dobrać separator."""
     if separator is not None:
         data = pd.read_csv(path, sep=separator)
     else:
@@ -32,12 +33,14 @@ def read_csv_auto(path, separator=None):
     return restore_index_if_needed(data)
 
 def read_csv_auto_from_text(text, separator=None):
+    """Wczytuje CSV z tekstu, np. ze stdout programu zewnętrznego."""
     data = pd.read_csv(StringIO(text), sep=separator)
     if separator is None and len(data.columns) == 1:
         data = pd.read_csv(StringIO(text), sep=";")
     return restore_index_if_needed(data)
 
 def load_config(config_path):
+    """Wczytuje konfigurację testera z pliku JSON i uzupełnia wartości domyślne."""
     config_file = Path(config_path)
 
     if not config_file.exists():
@@ -54,6 +57,7 @@ def load_config(config_path):
     return config, config_file.parent
 
 def resolve_path(base_dir, value):
+    """Zamienia ścieżkę względną na absolutną względem katalogu konfiguracji."""
     path = Path(value)
 
     if not path.is_absolute():
@@ -62,6 +66,7 @@ def resolve_path(base_dir, value):
     return path
 
 def restore_index_if_needed(data):
+    """Przywraca pierwszy słupek jako indeks, jeśli wygląda na zapisany indeks CSV."""
     if len(data.columns) == 0:
         return data
     first_column = str(data.columns[0])
@@ -73,6 +78,7 @@ def restore_index_if_needed(data):
     return data
 
 def validate_raw_data(data):
+    """Sprawdza poprawność surowych danych wejściowych."""
     errors = []
 
     if data.empty:
@@ -95,6 +101,7 @@ def validate_raw_data(data):
     return errors
 
 def validate_discretized_data(data):
+    """Sprawdza, czy dane zdyskretyzowane nie są puste i nie zawierają braków."""
     errors = []
 
     if data.empty:
@@ -106,6 +113,7 @@ def validate_discretized_data(data):
     return errors
 
 def parse_boundary(value):
+    """Zamienia granicę przedziału na liczbę lub nieskończoność."""
     text = str(value).strip()
     low = text.lower()
 
@@ -118,18 +126,22 @@ def parse_boundary(value):
     return float(text)
 
 def parse_interval(value):
+    """Parsuje zapis przedziału tekstowego do pary granic liczbowych i nawiasów."""
     text = str(value).strip()
 
-    if not ((text.startswith("(") or text.startswith("[")) and (text.endswith(")") or text.endswith("]"))):
-        raise ValueError(f"Przedział powinien być zapisany jako tuple, np. (-inf, 5.75), a jest: {value}")
-
-    match = re.fullmatch(r"[\(\[]\s*([^,;]+)\s*[,;]\s*([^)\]]+)\s*[\)\]]", text)
+    match = re.fullmatch(r"([\(\[])\s*([^,;]+)\s*[,;]\s*([^\)\]]+)\s*([\)\]])", text)
 
     if not match:
         raise ValueError(f"Niepoprawny format przedziału: {value}")
 
-    left = parse_boundary(match.group(1))
-    right = parse_boundary(match.group(2))
+    left_bracket = match.group(1)
+    right_bracket = match.group(4)
+
+    if left_bracket != "[" or right_bracket != ")":
+        raise ValueError(f"Przedział musi być zapisany jako lewostronnie domknięty i prawostronnie otwarty: {value}")
+
+    left = parse_boundary(match.group(2))
+    right = parse_boundary(match.group(3))
 
     if left >= right:
         raise ValueError(f"Niepoprawny przedział, lewa granica nie jest mniejsza od prawej: {value}")
@@ -137,6 +149,7 @@ def parse_interval(value):
     return left, right
 
 def validate_basic_structure(raw_data, discretized_data):
+    """Porównuje podstawową strukturę obu ramek danych."""
     errors = []
 
     if raw_data.shape[0] != discretized_data.shape[0]:
@@ -157,6 +170,7 @@ def validate_basic_structure(raw_data, discretized_data):
     return errors
 
 def validate_decision_column(raw_data, discretized_data):
+    """Sprawdza, czy kolumna decyzyjna została zachowana bez zmian."""
     errors = []
 
     decision_column = raw_data.columns[-1]
@@ -169,6 +183,7 @@ def validate_decision_column(raw_data, discretized_data):
     return errors
 
 def validate_intervals(raw_data, discretized_data):
+    """Sprawdza, czy każda wartość trafia do poprawnego przedziału."""
     errors = []
     parsed = pd.DataFrame(index=discretized_data.index)
 
@@ -198,6 +213,7 @@ def validate_intervals(raw_data, discretized_data):
     return errors, parsed
 
 def validate_boundary_values(parsed_data):
+    """Pilnuje, aby w każdej kolumnie występowały przedziały z -inf i inf."""
     errors = []
 
     for column in parsed_data.columns[:-1]:
@@ -214,6 +230,7 @@ def validate_boundary_values(parsed_data):
     return errors
 
 def find_conflict_groups(discretized_data):
+    """Wyszukuje grupy rekordów o tych samych warunkach, ale różnych decyzjach."""
     decision_column = discretized_data.columns[-1]
     conditional_columns = list(discretized_data.columns[:-1])
     groups = []
@@ -227,9 +244,11 @@ def find_conflict_groups(discretized_data):
     return groups
 
 def count_conflicting_rows(discretized_data):
+    """Liczy liczbę wierszy należących do grup konfliktowych."""
     return sum(len(group) for group in find_conflict_groups(discretized_data))
 
 def count_intervals(discretized_data):
+    """Liczy liczbę unikalnych przedziałów w każdej kolumnie i łącznie."""
     total = 0
     details = {}
 
@@ -241,11 +260,13 @@ def count_intervals(discretized_data):
     return total, details
 
 def print_errors(errors):
+    """Wypisuje listę błędów w czytelnej formie."""
     print("BŁĘDY:")
     for error in errors:
         print(f"- {error}")
 
 def print_conflict_report(discretized_data):
+    """Wypisuje raport grup konfliktowych."""
     groups = find_conflict_groups(discretized_data)
 
     print("Raport konfliktów:")
@@ -259,6 +280,7 @@ def print_conflict_report(discretized_data):
     print(f"Liczba konfliktujących wierszy: {count_conflicting_rows(discretized_data)}")
 
 def print_interval_report(discretized_data):
+    """Wypisuje podsumowanie liczby przedziałów w kolumnach."""
     total, details = count_intervals(discretized_data)
 
     print("Raport przedziałów:")
@@ -269,6 +291,7 @@ def print_interval_report(discretized_data):
     print(f"Łączna liczba przedziałów: {total}")
 
 def run_discretizer(program_path, raw_path, output_path, program_args, invoke_with_python):
+    """Uruchamia program dyskretyzujący jako subprocess i mierzy czas jego działania."""
     command = []
 
     if invoke_with_python and program_path.suffix == ".py":
@@ -290,6 +313,7 @@ def run_discretizer(program_path, raw_path, output_path, program_args, invoke_wi
     return completed, elapsed_time
 
 def load_discretized_data_from_run(config, base_dir, completed_process):
+    """Wczytuje wynik dyskretyzacji z pliku albo z stdout, zależnie od konfiguracji."""
     output_source = str(config.get("output_source", "csv_file"))
     output_separator = config.get("output_separator")
 
@@ -309,6 +333,7 @@ def load_discretized_data_from_run(config, base_dir, completed_process):
     return read_csv_auto(output_path, output_separator)
 
 def main():
+    """Główny punkt wejścia: uruchamia program dyskretyzujący i waliduje wynik."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="tester_config.json")
     args = parser.parse_args()
