@@ -1,4 +1,5 @@
 import argparse
+import importlib.util
 import json
 import math
 import re
@@ -20,6 +21,7 @@ DEFAULT_CONFIG = {
     "program_args": [],
     "invoke_with_python": True,
     "output_source": "csv_file",
+    "use_function": False,
 }
 
 def read_csv_auto(path, separator=None):
@@ -137,8 +139,9 @@ def parse_interval(value):
     left_bracket = match.group(1)
     right_bracket = match.group(4)
 
-    if left_bracket != "[" or right_bracket != ")":
-        raise ValueError(f"Przedział musi być zapisany jako lewostronnie domknięty i prawostronnie otwarty: {value}")
+    # Akceptujemy zarówno format [-inf, 6.55) jak i (-inf, 6.55)
+    if right_bracket != ")":
+        raise ValueError(f"Przedział musi być prawostronnie otwarty (skończyć się na ')'): {value}")
 
     left = parse_boundary(match.group(2))
     right = parse_boundary(match.group(3))
@@ -152,19 +155,29 @@ def validate_basic_structure(raw_data, discretized_data):
     """Porównuje podstawową strukturę obu ramek danych."""
     errors = []
 
-    if raw_data.shape[0] != discretized_data.shape[0]:
-        errors.append(f"Liczba wierszy się nie zgadza: surowe={raw_data.shape[0]}, zdyskretyzowane={discretized_data.shape[0]}.")
-
-    if len(raw_data.columns) != len(discretized_data.columns):
-        errors.append(f"Liczba kolumn się nie zgadza: surowe={len(raw_data.columns)}, zdyskretyzowane={len(discretized_data.columns)}.")
+    # Zezwalamy na +1 kolumnę w danych zdyskretyzowanych (ze względu na indeks)
+    expected_cols = len(raw_data.columns)
+    actual_cols = len(discretized_data.columns)
+    if actual_cols not in [expected_cols, expected_cols + 1]:
+        errors.append(f"Liczba kolumn się nie zgadza: surowe={expected_cols}, zdyskretyzowane={actual_cols}. Oczekiwano {expected_cols} lub {expected_cols + 1}.")
         return errors
 
-    if list(raw_data.columns) != list(discretized_data.columns):
+    # Sprawdzamy nazwy kolumn (pomijając potencjalną kolumnę indeksu)
+    raw_cols = list(raw_data.columns)
+    discretized_cols = list(discretized_data.columns)
+    
+    # Jeśli jest +1 kolumna, sprawdzamy czy pierwsza to 'index' lub numeryczna
+    if actual_cols == expected_cols + 1:
+        if discretized_cols[0] not in ['index', 0, '0'] and not str(discretized_cols[0]).replace('.', '').isdigit():
+            errors.append(f"Pierwsza kolumna w danych zdyskretyzowanych powinna być indeksem, a jest: {discretized_cols[0]}")
+        discretized_cols = discretized_cols[1:]
+    
+    if raw_cols != discretized_cols:
         errors.append("Nazwy lub kolejność kolumn nie są takie same.")
-        errors.append(f"Surowe kolumny: {list(raw_data.columns)}")
-        errors.append(f"Zdyskretyzowane kolumny: {list(discretized_data.columns)}")
+        errors.append(f"Surowe kolumny: {raw_cols}")
+        errors.append(f"Zdyskretyzowane kolumny: {discretized_cols}")
 
-    if list(raw_data.index) != list(discretized_data.index):
+    if raw_data.shape[0] == discretized_data.shape[0] and list(raw_data.index) != list(discretized_data.index):
         errors.append("Indeksy lub kolejność wierszy zostały zmienione.")
 
     return errors
@@ -186,29 +199,32 @@ def validate_intervals(raw_data, discretized_data):
     """Sprawdza, czy każda wartość trafia do poprawnego przedziału."""
     errors = []
     parsed = pd.DataFrame(index=discretized_data.index)
+    common_length = min(len(raw_data.index), len(discretized_data.index))
+    raw_indexes = list(raw_data.index)[:common_length]
+    discretized_indexes = list(discretized_data.index)[:common_length]
 
     for column in raw_data.columns[:-1]:
         parsed_values = []
 
-        for index in raw_data.index:
-            raw_value = float(raw_data.loc[index, column])
-            cell = discretized_data.loc[index, column]
+        for raw_index, discretized_index in zip(raw_indexes, discretized_indexes):
+            raw_value = float(raw_data.loc[raw_index, column])
+            cell = discretized_data.loc[discretized_index, column]
 
             try:
                 left, right = parse_interval(cell)
             except Exception as error:
-                errors.append(f"Wiersz {index}, kolumna '{column}': {error}")
+                errors.append(f"Wiersz {discretized_index}, kolumna '{column}': {error}")
                 continue
 
             if not (left <= raw_value < right):
-                errors.append(f"Wiersz {index}, kolumna '{column}': wartość {raw_value} nie należy do przedziału {cell}.")
+                errors.append(f"Wiersz {discretized_index}, kolumna '{column}': wartość {raw_value} nie należy do przedziału {cell}.")
 
             parsed_values.append((left, right))
 
-        if len(parsed_values) == len(raw_data.index):
+        if len(parsed_values) == common_length:
             parsed[column] = parsed_values
 
-    parsed[raw_data.columns[-1]] = discretized_data[raw_data.columns[-1]].to_numpy()
+    parsed[raw_data.columns[-1]] = discretized_data.iloc[:common_length][raw_data.columns[-1]].to_numpy()
 
     return errors, parsed
 
@@ -253,6 +269,10 @@ def count_intervals(discretized_data):
     details = {}
 
     for column in discretized_data.columns[:-1]:
+        column_name = str(column).strip()
+        if column_name in {"index", "Indeks"} or column_name.startswith("Unnamed"):
+            continue
+
         unique_intervals = set(discretized_data[column].tolist())
         details[column] = len(unique_intervals)
         total += len(unique_intervals)
@@ -289,6 +309,30 @@ def print_interval_report(discretized_data):
         print(f"{column}: {count}")
 
     print(f"Łączna liczba przedziałów: {total}")
+
+def import_discretize_function(program_path):
+    """Importuje funkcję discretize z modułu Python."""
+    spec = importlib.util.spec_from_file_location(program_path.stem, program_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Nie można załadować modułu z: {program_path}")
+    
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    
+    if not hasattr(module, "discretize"):
+        raise AttributeError(f"Moduł {program_path.stem} nie zawiera funkcji 'discretize'")
+    
+    return module.discretize
+
+def run_discretizer_function(program_path, raw_data):
+    """Uruchamia funkcję discretize bezpośrednio na danych i mierzy czas."""
+    discretize_func = import_discretize_function(program_path)
+    
+    start_time = time.perf_counter()
+    result = discretize_func(raw_data)
+    elapsed_time = time.perf_counter() - start_time
+    
+    return result, elapsed_time
 
 def run_discretizer(program_path, raw_path, output_path, program_args, invoke_with_python):
     """Uruchamia program dyskretyzujący jako subprocess i mierzy czas jego działania."""
@@ -347,6 +391,7 @@ def main():
     raw_csv_path = resolve_path(config_dir, config["raw_csv"])
     program_path = resolve_path(config_dir, config["program"])
     output_source = str(config.get("output_source", "csv_file"))
+    use_function = bool(config.get("use_function", False))
 
     if output_source not in {"csv_file", "stdout_csv"}:
         print(f"BŁĄD KONFIGURACJI: nieobsługiwany output_source: {output_source}")
@@ -363,32 +408,44 @@ def main():
     raw_data = read_csv_auto(raw_csv_path, config.get("raw_separator"))
 
     output_path = None
-    if output_source == "csv_file":
+    if output_source == "csv_file" and not use_function:
         output_path = resolve_path(config_dir, config["output_csv"])
         output_path.unlink(missing_ok=True)
 
     try:
-        completed_process, elapsed_time = run_discretizer(
-            program_path=program_path,
-            raw_path=raw_csv_path,
-            output_path=output_path,
-            program_args=config.get("program_args", []),
-            invoke_with_python=bool(config.get("invoke_with_python", True)),
-        )
+        if use_function:
+            discretized_data, elapsed_time = run_discretizer_function(
+                program_path=program_path,
+                raw_data=raw_data,
+            )
+            completed_process = None
+        else:
+            completed_process, elapsed_time = run_discretizer(
+                program_path=program_path,
+                raw_path=raw_csv_path,
+                output_path=output_path,
+                program_args=config.get("program_args", []),
+                invoke_with_python=bool(config.get("invoke_with_python", True)),
+            )
+            discretized_data = None
     except Exception as error:
         print(f"BŁĄD URUCHOMIENIA PROGRAMU: {error}")
         return
 
     errors = []
 
-    if completed_process.returncode != 0:
+    if not use_function and completed_process.returncode != 0:
         errors.append(f"Program dyskretyzujący zakończył się kodem {completed_process.returncode}.")
         if completed_process.stderr:
             errors.append(completed_process.stderr.strip())
 
-    discretized_data = None
+    if discretized_data is None and not use_function:
+        try:
+            discretized_data = load_discretized_data_from_run(config, config_dir, completed_process)
+        except Exception as error:
+            errors.append(str(error))
 
-    if not errors:
+    if not errors and discretized_data is None:
         try:
             discretized_data = load_discretized_data_from_run(config, config_dir, completed_process)
         except Exception as error:

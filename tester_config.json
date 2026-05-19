@@ -1,10 +1,11 @@
 {
-  "raw_csv": "iris.csv",
-  "program": "test_discretizer.py",
-  "output_csv": "generated_discretized.csv",
+  "raw_csv": "data2.csv",
+  "program": "z2.py",
+  "output_csv": "discretized.csv",
   "raw_separator": null,
   "output_separator": null,
   "program_args": [],
   "invoke_with_python": true,
-  "output_source": "csv_file"
+  "output_source": "csv_file",
+  "use_function": true
 }

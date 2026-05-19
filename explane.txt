@@ -1,0 +1,35 @@
+Na początku skrypt ładuje konfigurację z tester_config.json i dopisuje wartości domyślne z DEFAULT_CONFIG. To robią load_config() i DEFAULT_CONFIG w tester.py:12. Dzięki temu tester wie, jaki plik wejściowy ma czytać, jaki program uruchomić i czy wynik ma brać z pliku, stdout czy bezpośrednio z funkcji.
+
+Potem ustala ścieżki względne względem katalogu konfiguracji. Za to odpowiada resolve_path(). Jeśli w konfiguracji wpiszesz iris.csv, tester zamienia to na pełną ścieżkę w bieżącym workspace.
+
+Tester wczytuje surowe dane przez read_csv_auto(). Ta funkcja próbuje zwykłego CSV, a jeśli widzi jedną kolumnę, to spróbuje też separatora ;. Dodatkowo restore_index_if_needed() przywraca indeks, jeśli CSV został zapisany z dodatkową kolumną typu Unnamed.
+
+Następnie uruchamia program dyskretyzujący. Są tu dwa tryby:
+
+run_discretizer() uruchamia program jako osobny proces systemowy.
+run_discretizer_function() importuje moduł Pythona i wywołuje bezpośrednio funkcję discretize().
+To przełącza flaga use_function w konfiguracji. Ten mechanizm jest w środkowej części tester.py:330. Jeśli use_function=true, tester nie czeka na plik wyjściowy, tylko bierze zwróconą DataFrame.
+
+Tester wczytuje wynik dyskretyzacji do discretized_data. Jeśli wynik pochodzi z pliku, robi to przez load_discretized_data_from_run(). Jeśli pochodzi z funkcji, discretized_data już jest gotowe i nie trzeba niczego ponownie czytać.
+
+Potem startują walidacje:
+
+validate_raw_data() sprawdza, czy dane wejściowe nie są puste, mają co najmniej jedną kolumnę warunkową i decyzję oraz czy wartości warunkowe są liczbowe.
+validate_discretized_data() sprawdza, czy wynik nie jest pusty i nie ma braków.
+validate_basic_structure() porównuje strukturę obu ramek. W Twoim przypadku dopuszcza też różną liczbę wierszy, jeśli taki jest zamysł programu.
+validate_decision_column() sprawdza, czy kolumna decyzyjna się nie zmieniła.
+validate_intervals() sprawdza, czy każda wartość z surowych danych wpada do poprawnego przedziału w wyniku.
+validate_boundary_values() pilnuje, żeby w każdej kolumnie były przedziały z -inf i inf.
+Na końcu tester liczy raporty pomocnicze:
+
+print_interval_report() używa count_intervals() i pokazuje liczbę unikalnych przedziałów w każdej kolumnie oraz sumę łączną.
+print_conflict_report() pokazuje grupy konfliktowe, czyli rekordy z tymi samymi warunkami, ale różnymi decyzjami.
+Skrypt wypisuje podsumowanie: czas działania programu, wynik ZALICZONE albo NIEZALICZONE, a jeśli są błędy, drukuje je przez print_errors().
+
+Ważny szczegół o liczbie przedziałów
+
+W tester.py:240 funkcja count_intervals() ignoruje kolumny wyglądające na indeksowe, takie jak index, Indeks albo Unnamed.... To było potrzebne, żeby nie liczyć indeksu jako osobnego atrybutu przy wynikach zapisanych do CSV.
+
+Jeśli chcesz, mogę jeszcze rozpisać Ci to samo jako krótką mapę „co robi każda funkcja” albo przejść przez tester.py linia po linii.
+
+GPT-5.4 mini • 0.3x
