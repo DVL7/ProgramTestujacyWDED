@@ -1,5 +1,7 @@
 # Dokumentacja programu `ztest.py`
 
+`tester.py` - program używany na ostatnich zajęciach, NIEAKTUALNY
+
 ## Opis projektu
 
 `ztest.py` to skrypt testujący program dyskretyzujący dane numeryczne. Jego zadaniem jest wczytanie zewnętrznego pliku Python zawierającego funkcję `discretize(df)`, uruchomienie tej funkcji na danych z pliku CSV, a następnie sprawdzenie, czy wynik dyskretyzacji spełnia wymagania formalne.
