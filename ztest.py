@@ -194,7 +194,6 @@ def main():
 	print("Raport Konfliktów:")
 	seen = set()
 	for group in conflict_groups:
-		# group contains 1-based row numbers
 		to_print = [r for r in group if r not in seen]
 		if not to_print:
 			continue
