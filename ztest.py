@@ -24,25 +24,25 @@ def load_discretize(algo_path: Path):
 	return module.discretize
 
 
-def normalize_output(raw_df: pd.DataFrame, out_df: pd.DataFrame) -> pd.DataFrame:
-	if len(out_df.columns) == len(raw_df.columns):
+def normalize_output(df: pd.DataFrame, out_df: pd.DataFrame) -> pd.DataFrame:
+	if len(out_df.columns) == len(df.columns):
 		return out_df
 
-	if len(out_df.columns) == len(raw_df.columns) + 1:
+	if len(out_df.columns) == len(df.columns) + 1:
 		index_col = out_df.columns[0]
-		if index_col not in raw_df.columns or str(index_col).lower() in {"index", "unnamed: 0", "unnamed"}:
+		if index_col not in df.columns or str(index_col).lower() in {"index", "unnamed: 0", "unnamed"}:
 			return out_df.iloc[:, 1:].copy()
 
 	raise ValueError(
-		f"Niepoprawna liczba kolumn: wejscie={len(raw_df.columns)}, wyjscie={len(out_df.columns)}"
+		f"Niepoprawna liczba kolumn: wejscie={len(df.columns)}, wyjscie={len(out_df.columns)}"
 	)
 
 
 def parse_boundary(value):
 	text = str(value).strip().lower()
-	if text in {"-inf", "-infinity"}:
+	if text in {"-inf"}:
 		return -math.inf
-	if text in {"inf", "+inf", "infinity", "+infinity"}:
+	if text in {"inf"}:
 		return math.inf
 	return float(value)
 
@@ -66,32 +66,33 @@ def parse_interval(value):
 	return left, right
 
 
-def run_test(discretize, raw_df: pd.DataFrame):
+def run_test(discretize, df: pd.DataFrame):
 	start = time.perf_counter()
-	with redirect_stdout(io.StringIO()):
-		out_df = discretize(raw_df.copy())
+	
+	out_df = discretize(df.copy())
+	
 	elapsed = time.perf_counter() - start
 
 	if not isinstance(out_df, pd.DataFrame):
 		raise TypeError("discretize() musi zwracac pandas.DataFrame")
 
-	out_df = normalize_output(raw_df, out_df)
+	out_df = normalize_output(df, out_df)
 	errors = []
 	parsed = pd.DataFrame(index=out_df.index)
 
-	if len(out_df) != len(raw_df):
-		errors.append(f"niezgodna liczba wierszy: wejscie={len(raw_df)}, wyjscie={len(out_df)}")
+	if len(out_df) != len(df):
+		errors.append(f"niezgodna liczba wierszy: wejscie={len(df)}, wyjscie={len(out_df)}")
 
-	if list(out_df.columns) != list(raw_df.columns):
+	if list(out_df.columns) != list(df.columns):
 		errors.append("niezgodne nazwy lub kolejnosc kolumn")
 
-	decision_col = raw_df.columns[-1]
-	if raw_df[decision_col].astype(str).tolist() != out_df[decision_col].astype(str).tolist():
+	decision_col = df.columns[-1]
+	if df[decision_col].astype(str).tolist() != out_df[decision_col].astype(str).tolist():
 		errors.append("kolumna decyzyjna zostala zmieniona")
 
-	for col in raw_df.columns[:-1]:
+	for col in df.columns[:-1]:
 		parsed_values = []
-		for idx, (raw_value, cell) in enumerate(zip(raw_df[col].tolist(), out_df[col].tolist()), start=1):
+		for idx, (raw_value, cell) in enumerate(zip(df[col].tolist(), out_df[col].tolist()), start=1):
 			try:
 				left, right = parse_interval(cell)
 			except Exception as exc:
@@ -103,7 +104,7 @@ def run_test(discretize, raw_df: pd.DataFrame):
 				errors.append(f"wiersz {idx}, kolumna '{col}': wartosc {numeric} nie nalezy do przedzialu {cell}")
 			parsed_values.append((left, right))
 
-		if len(parsed_values) == len(raw_df):
+		if len(parsed_values) == len(df):
 			parsed[col] = parsed_values
 
 	parsed[decision_col] = out_df[decision_col].to_numpy()
@@ -129,7 +130,7 @@ def run_test(discretize, raw_df: pd.DataFrame):
 				rows = []
 				for idx_label in group.index.tolist():
 					try:
-						pos = int(raw_df.index.get_loc(idx_label)) + 1
+						pos = int(df.index.get_loc(idx_label)) + 1
 					except Exception:
 						try:
 							pos = int(idx_label) + 1
@@ -171,11 +172,11 @@ def main():
 		sys.exit(1)
 
 
-	raw_df = pd.read_csv(data_path)
+	df = pd.read_csv(data_path)
 	discretize = load_discretize(algo_path)
 
 	try:
-		elapsed, cut_count, conflicts, conflict_groups, errors = run_test(discretize, raw_df)
+		elapsed, cut_count, conflicts, conflict_groups, errors = run_test(discretize, df)
 	except Exception as exc:
 		print(f"Blad: {exc}")
 		sys.exit(1)
